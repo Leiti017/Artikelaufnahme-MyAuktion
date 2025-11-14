@@ -1,0 +1,790 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Artikelaufnahme</title>
+  <link rel="icon" type="image/x-icon" href="/my_icon.ico">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#0f172a">
+  <script defer src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root { color-scheme: light dark; }
+    body { min-height: 100vh; background:
+        radial-gradient(1200px 600px at 80% -10%, #e7f1ff 0%, transparent 60%),
+        linear-gradient(135deg, #0ea5e9 0%, #1d4ed8 60%, #1e293b 100%);
+    }
+    .glass { background: rgba(255,255,255,0.08); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.15); }
+    .btn { padding:.5rem 1rem; border-radius:1rem; font-weight:600; transition:.15s; }
+    .btn:hover { opacity:.92; transform: translateY(-1px); }
+    .btn-primary { background:#fff; color:#0f172a; box-shadow:0 8px 30px rgba(0,0,0,.15); }
+    .btn-ghost { color:#fff; border:1px solid rgba(255,255,255,.35); }
+    .input { width:100%; border-radius:.75rem; padding:.6rem .9rem; background:rgba(255,255,255,.96); color:#0f172a; outline:none; border:1px solid transparent; }
+    .input:focus { box-shadow:0 0 0 3px rgba(59,130,246,.35); border-color:rgba(255,255,255,.85); }
+    .textarea { width:100%; min-height:140px; border-radius:.75rem; padding:.6rem .9rem; background:rgba(255,255,255,.96); color:#0f172a; outline:none; border:1px solid transparent; }
+    .toast-wrap { position:fixed; top:12px; right:12px; z-index:9999; display:flex; flex-direction:column; gap:10px; }
+    .toast { color:#0f172a; background:#fff; border-radius:12px; padding:10px 14px; font-weight:600; box-shadow:0 10px 30px rgba(0,0,0,.18); transform-origin:top right; opacity:0; transform:scale(.92) translateY(-6px); transition:transform .18s ease, opacity .18s ease; border:1px solid rgba(0,0,0,.06); }
+    .toast.show { opacity:1; transform:scale(1) translateY(0); }
+    .toast.info { background:#eef2ff; color:#111827; }
+    .toast.ok { background:#ecfeff; color:#0f172a; }
+    .toast.warn { background:#fff7ed; color:#7c2d12; }
+
+    #progress-overlay { position: fixed; inset: 0; display:none; align-items:center; justify-content:center; background: rgba(0,0,0,.35); z-index: 9998; }
+    #progress-card { min-width: 260px; max-width: 90vw; }
+    .bar { height: 10px; width: 100%; background: rgba(255,255,255,.25); border-radius: 999px; overflow: hidden; }
+    .bar > div { height: 100%; width: 0%; background: #fff; transition: width .18s ease; }
+
+    #mini-log { position: fixed; right: 12px; bottom: 12px; z-index: 9997; width: 320px; max-height: 35vh; overflow:auto; }
+    #mini-log .item { background:#ffffff; color:#0f172a; border-radius: 12px; padding: 8px 10px; border:1px solid rgba(0,0,0,.06); box-shadow:0 6px 24px rgba(0,0,0,.14); margin-top:8px; font-size: 0.9rem; }
+    #mini-log .ok { border-left: 6px solid #10b981; }
+    #mini-log .info { border-left: 6px solid #3b82f6; }
+    #mini-log .warn { border-left: 6px solid #f59e0b; }
+    #mini-log .muted { opacity: .8; font-size:.85rem; }
+
+    #save-meta.saved #save-text { opacity:0; transform: scale(0.8); }
+    #save-meta.saved #save-check { opacity:1; transform: scale(1); }
+    #save-check { transform: scale(0); }
+    details summary { cursor: pointer; }
+
+    .preview-card { min-height: 140px; white-space: pre-wrap; background: rgba(255,255,255,.06); border-radius: .75rem; padding: .75rem; border:1px solid rgba(255,255,255,.18); }
+    .badge { padding:.25rem .6rem; border-radius:999px; border:1px solid rgba(255,255,255,.35); }
+  </style>
+</head>
+<body class="text-white">
+  <div id="toast-wrap" class="toast-wrap"></div>
+
+  <div id="progress-overlay" class="flex">
+    <div id="progress-card" class="glass rounded-2xl p-4 w-full max-w-sm text-white">
+      <div class="font-semibold" id="progress-text">Bitte warten…</div>
+      <div class="mt-3 bar"><div id="progress-bar"></div></div>
+    </div>
+  </div>
+
+  <div id="mini-log"></div>
+
+  <div class="max-w-6xl mx-auto p-6">
+    <header class="flex items-center justify-between mb-6">
+      <h1 class="text-3xl md:text-4xl font-bold tracking-tight">MyAuktion · Artikelaufnahme</h1>
+      <div class="flex items-center gap-3">
+        <span id="rembg-badge" class="px-3 py-1 rounded-full text-sm glass">Freistellen: …</span>
+        <button id="export-all" onclick="window.location.href='/api/export_excel'" class="btn btn-ghost"><i data-lucide="table"></i> Gesamtartikel-Export (Excel)</button>
+      </div>
+    </header>
+
+    <main class="glass rounded-3xl p-6 md:p-8 shadow-xl">
+      <form id="meta-form" class="grid md:grid-cols-4 gap-4 items-end" onsubmit="return false;">
+        <div>
+          <label class="block mb-1 text-sm opacity-80">Artikelnummer</label>
+          <input id="artikelnr" name="artikelnr" type="text" inputmode="numeric" pattern="\d*" autocomplete="off" class="input" value="">
+        </div>
+        <div>
+          <label class="block mb-1 text-sm opacity-80">Einlieferer-ID</label>
+          <input id="supplier" name="supplier" type="text" inputmode="numeric" pattern="\d*" autocomplete="off" class="input" value="">
+        </div>
+        <div>
+          <label class="block mb-1 text-sm opacity-80">Lagerort</label>
+          <input id="lagerort" name="lagerort" class="input" list="lagerorte" placeholder="z. B. Haushalt/Freizeit 170A" value="">
+          <datalist id="lagerorte">
+            <option value="Haushalt/Freizeit 170A">
+            <option value="Haushalt/Freizeit 170B">
+            <option value="Haushalt/Freizeit 170C">
+            <option value="Haushalt/Freizeit 170D">
+          </datalist>
+        </div>
+        <div class="flex flex-col md:items-end gap-2">
+          <div class="flex items-center gap-3">
+            <input id="autoinc" type="checkbox" class="h-5 w-5" checked>
+            <label for="autoinc" class="text-sm opacity-90">Art.-Nr. automatisch hochzählen</label>
+          </div>
+          <button type="button" id="save-meta" class="btn btn-primary w-full md:w-auto relative overflow-hidden inline-flex items-center gap-2">
+            <i data-lucide="save" class="w-7 h-7"></i>
+            <span id="save-text">Speichern</span>
+            <span id="save-check" class="absolute inset-0 flex items-center justify-center text-emerald-600 text-2xl opacity-0 transition-all duration-200">✔</span>
+          </button>
+        </div>
+      </form>
+
+      <!-- NEU: Textfelder + Live-Vorschau -->
+      <div class="mt-6 grid md:grid-cols-2 gap-6">
+        <div class="space-y-3">
+          <div class="flex items-center justify-between">
+            <h2 class="text-xl font-semibold">Bezeichnung & Beschreibung</h2>
+            <label class="inline-flex items-center gap-2 text-sm">
+              <input id="auto-apply-suggest" type="checkbox" class="h-5 w-5" checked>
+              Vorschlag automatisch übernehmen
+            </label>
+          </div>
+          <div>
+            <label class="block mb-1 text-sm opacity-80">Bezeichnung</label>
+            <input id="titleInput" class="input" placeholder="Marke Produktbezeichnung Typ">
+          </div>
+          <div>
+            <label class="block mb-1 text-sm opacity-80">Beschreibung</label>
+            <textarea id="descInput" class="textarea" placeholder="Kurzbeschreibung …"></textarea>
+          </div>
+          <button id="btn-ocr" class="btn btn-ghost inline-flex items-center gap-2">
+            <i data-lucide="scan-text"></i><span>Bezeichnung &amp; Beschreibung zum Bild vorschlagen</span>
+          </button>
+        </div>
+        <div class="space-y-3">
+          <div class="flex items-center gap-2">
+            <h2 class="text-xl font-semibold">Live-Vorschau</h2>
+            <span class="badge">spiegelt direkt deine Eingaben</span>
+          </div>
+          <div>
+            <div class="text-sm opacity-80 mb-1">Bezeichnung</div>
+            <div id="titlePreview" class="preview-card">–</div>
+          </div>
+          <div>
+            <div class="text-sm opacity-80 mb-1">Beschreibung</div>
+            <div id="descPreview" class="preview-card">–</div>
+          </div>
+        </div>
+      </div>
+
+      <hr class="my-6 border-white/20">
+
+      <div class="grid md:grid-cols-2 gap-6">
+        <div class="space-y-4">
+          <h2 class="text-xl font-semibold">Foto aufnehmen / hochladen</h2>
+
+          <div class="flex flex-wrap gap-3">
+            <button id="open-camera" class="btn btn-primary inline-flex items-center gap-2">
+              <i data-lucide="camera"></i><span>Kamera</span>
+            </button>
+            <label class="btn btn-ghost inline-flex items-center gap-2 cursor-pointer">
+              <i data-lucide="upload"></i><span>Datei wählen</span>
+              <input id="file-input" type="file" accept="image/*" class="hidden" multiple>
+            </label>
+            <label class="inline-flex items-center gap-2 text-sm opacity-90">
+              <input id="serial-mode" type="checkbox" class="h-5 w-5">
+              Serienaufnahme
+            </label>
+          </div>
+
+          <div class="flex flex-wrap gap-4 mt-1">
+            <label class="inline-flex items-center gap-2 text-sm opacity-90">
+              <input id="remove-bg" type="checkbox" class="h-5 w-5" checked>
+              Hintergrund entfernen
+            </label>
+            <label class="inline-flex items-center gap-2 text-sm opacity-90">
+              <input id="add-shadow" type="checkbox" class="h-5 w-5" checked>
+              Schatten hinzufügen
+            </label>
+            <button id="refreistellen" class="btn btn-ghost inline-flex items-center gap-2">
+              <i data-lucide="bot"></i><span>Neu freistellen (letztes Bild)</span>
+            </button>
+          </div>
+
+          <div id="last-shot" class="mt-3 glass rounded-xl p-3 flex items-center gap-3">
+            <div class="text-sm">
+              <div class="opacity-80">Zuletzt aufgenommener Artikel</div>
+              <div id="last-artnr" class="text-lg font-semibold">–</div>
+            </div>
+            <img id="last-thumb" src="" class="w-20 h-20 object-cover rounded-lg border border-white/20 ml-auto" alt="Letztes Vorschaubild">
+          </div>
+        </div>
+
+        <div>
+          <h2 class="text-xl font-semibold mb-3">Bild-Vorschau</h2>
+          <div id="preview-wrap" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div class="glass rounded-xl p-3">
+              <div class="text-sm opacity-90 mb-2">Original</div>
+              <img id="preview-raw" src="" class="w-full h-64 object-contain rounded-lg bg-white" alt="Original-Vorschau">
+            </div>
+            <div class="glass rounded-xl p-3">
+              <div class="text-sm opacity-90 mb-2">Optimiert</div>
+              <img id="preview-proc" src="" class="w-full h-64 object-contain rounded-lg bg-white" alt="Optimierte Vorschau">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <hr class="my-6 border-white/20">
+
+      <div class="mt-6">
+        <h2 class="text-xl font-semibold mb-3">Bilder für Artikel <span id="gal-artnr"></span></h2>
+        <div id="gallery" class="grid grid-cols-2 md:grid-cols-4 gap-3"></div>
+      </div>
+
+      <hr class="my-6 border-white/20">
+      <details class="glass rounded-2xl p-4">
+        <summary class="text-lg font-semibold">⚙️ Admin-Tools</summary>
+        <div class="mt-4 grid md:grid-cols-3 gap-4">
+          <div class="glass rounded-xl p-3">
+            <div class="text-sm opacity-80 mb-2">Systemstatus</div>
+            <div id="stat-box" class="text-sm space-y-1">
+              <div>RAW Bilder: <span id="stat-raw">-</span></div>
+              <div>Optimierte Bilder: <span id="stat-proc">-</span></div>
+              <div>Artikel (distinct): <span id="stat-articles">-</span></div>
+              <div>rembg: <span id="stat-rembg">-</span></div>
+            </div>
+            <button id="btn-refresh-stats" class="mt-3 btn btn-ghost w-full">Status aktualisieren</button>
+          </div>
+
+          <div class="glass rounded-xl p-3">
+            <div class="text-sm opacity-80 mb-2">rembg</div>
+            <button id="btn-model-load" class="btn btn-primary w-full">Model laden/prüfen</button>
+            <a href="/api/rembg_diag" target="_blank" class="mt-2 block text-center underline">Diagnose öffnen</a>
+          </div>
+
+          <div class="glass rounded-xl p-3">
+            <div class="text-sm opacity-80 mb-2">Batch</div>
+            <div class="flex items-center gap-3 mb-3">
+              <label class="inline-flex items-center gap-2 text-sm">
+                <input id="batch-remove-bg" type="checkbox" class="h-5 w-5" checked>
+                Hintergrund entfernen
+              </label>
+              <label class="inline-flex items-center gap-2 text-sm">
+                <input id="batch-add-shadow" type="checkbox" class="h-5 w-5" checked>
+                Schatten
+              </label>
+            </div>
+            <button id="btn-batch-ref" class="btn btn-ghost w-full">Neu freistellen (alle)</button>
+            <button id="btn-rebuild" class="btn btn-ghost w-full mt-2">Cache leeren & neu rendern</button>
+            <div id="rebuild-progress" class="mt-2 text-sm hidden">
+              <div>Fortschritt: <span id="rb-done">0</span>/<span id="rb-total">0</span> (<span id="rb-perc">0</span>%) – Fehler: <span id="rb-err">0</span></div>
+              <div class="w-full h-2 bg-white/20 rounded"><div id="rb-bar" class="h-2 bg-white rounded" style="width:0%"></div></div>
+            </div>
+          </div>
+        </div>
+      </details>
+
+    </main>
+
+    <footer class="mt-8 flex items-center justify-between text-white/90">
+      <div class="flex items-center gap-2">
+        <i data-lucide="gavel"></i>
+        <span class="font-semibold">Programmiert von Jan Leitinger / Leiti017</span>
+      </div>
+      <div class="space-x-3">
+        <a class="underline" href="https://www.myauktion.com" target="_blank" rel="noreferrer">www.myauktion.com</a>
+        <span>·</span>
+        <a class="underline" href="https://www.goldgrube.at" target="_blank" rel="noreferrer">www.goldgrube.at</a>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Kamera Modal -->
+  <div id="camera-modal" class="fixed inset-0 hidden items-center justify-center bg-black/60 p-4 z-50">
+    <div class="glass rounded-3xl w-full max-w-xl p-4">
+      <div class="flex items-center justify-between mb-2">
+        <h3 class="text-lg font-semibold">Kamera</h3>
+        <button id="close-camera" class="btn btn-ghost">Schließen</button>
+      </div>
+      <video id="video" class="w-full rounded-2xl bg-black/30" autoplay playsinline></video>
+      <div class="flex justify-end gap-3 mt-3">
+        <button id="snap" class="btn btn-primary inline-flex items-center gap-2"><i data-lucide="circle"></i><span>Foto</span></button>
+      </div>
+      <canvas id="canvas" class="hidden"></canvas>
+    </div>
+  </div>
+
+  <script>
+    // API-Basis (für Netlify ggf. anpassen, z.B. "https://dein-backend.myauktion.com")
+    const API_BASE = '';
+
+    function apiFetch(path, options = {}) {
+      return fetch(API_BASE + path, options);
+    }
+
+    // Icons + Service Worker + Kamera-Autostart
+    window.addEventListener('DOMContentLoaded', () => {
+      if (window.lucide) lucide.createIcons();
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js').catch(() => {});
+      }
+      setTimeout(() => {
+        const btn = document.getElementById('open-camera');
+        if (btn) btn.click();
+      }, 600);
+    });
+
+    const artikelInput = document.getElementById('artikelnr');
+    const supplierInput = document.getElementById('supplier');
+    const autoinc = document.getElementById('autoinc');
+    const removeBg = document.getElementById('remove-bg');
+    const addShadow = document.getElementById('add-shadow');
+    const autoApply = document.getElementById('auto-apply-suggest');
+    const lagerInput = document.getElementById('lagerort');
+
+    const titleInput = document.getElementById('titleInput');
+    const descInput  = document.getElementById('descInput');
+    const titlePreview = document.getElementById('titlePreview');
+    const descPreview  = document.getElementById('descPreview');
+
+    const toastWrap = document.getElementById('toast-wrap');
+    const miniLog = document.getElementById('mini-log');
+
+    function logItem(msg, type='ok') {
+      const time = new Date().toLocaleTimeString();
+      const el = document.createElement('div');
+      el.className = 'item ' + type;
+      el.innerHTML = '<div>' + msg + '</div><div class="muted">'+ time +'</div>';
+      miniLog.appendChild(el);
+      miniLog.scrollTop = miniLog.scrollHeight;
+    }
+
+    const progressOverlay = document.getElementById('progress-overlay');
+    const progressBar = document.getElementById('progress-bar');
+    const progressText = document.getElementById('progress-text');
+    let progressTimer = null, fakeVal = 0;
+
+    function startProgress(text='Bitte warten…') {
+      progressText.textContent = text;
+      progressOverlay.style.display = 'flex';
+      fakeVal = 0;
+      progressBar.style.width = '0%';
+      clearInterval(progressTimer);
+      progressTimer = setInterval(() => {
+        fakeVal = Math.min(90, fakeVal + Math.random()*7 + 2);
+        progressBar.style.width = fakeVal.toFixed(0) + '%';
+      }, 180);
+    }
+    function finishProgress() {
+      clearInterval(progressTimer);
+      progressBar.style.width = '100%';
+      setTimeout(() => { progressOverlay.style.display = 'none'; progressBar.style.width = '0%'; }, 300);
+    }
+
+    async function fetchJSON(url, options = {}, timeoutMs = 45000) {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), timeoutMs);
+      try {
+        const res = await apiFetch(url, { ...options, signal: ctrl.signal });
+        let data;
+        try {
+          data = await res.json();
+        } catch (e) {
+          const text = await res.text().catch(() => "");
+          const err = new Error(text || "Unerwartete Server-Antwort (kein JSON)."); err.status=res.status; throw err;
+        }
+        if (!res.ok) {
+          const err = new Error((data && (data.error || data.message)) || "Server-Fehler"); err.status=res.status; err.data=data; throw err;
+        }
+        return data;
+      } finally { clearTimeout(t); }
+    }
+    window.addEventListener('unhandledrejection', () => { try { finishProgress(); } catch(_){} });
+    window.addEventListener('error', () => { try { finishProgress(); } catch(_){} });
+
+    function showToast(msg, type='ok', ttl=1800, detail=null) {
+      const el = document.createElement('div');
+      el.className = 'toast ' + (type || 'ok');
+      el.innerHTML = detail ? (`<div class="font-semibold mb-1">${msg}</div><pre class="mt-1 whitespace-pre-wrap text-sm">${detail}</pre>`) : msg;
+      toastWrap.appendChild(el);
+      void el.offsetWidth; el.classList.add('show');
+      setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 220); }, ttl);
+    }
+
+    function digitsOnly(e) {
+      const v = e.target.value.replace(/\D+/g, '');
+      if (e.target.value !== v) e.target.value = v;
+    }
+    artikelInput.addEventListener('input', digitsOnly);
+    supplierInput.addEventListener('input', digitsOnly);
+    artikelInput.addEventListener('change', () => {
+      loadTextForCurrent();
+      loadLagerortForCurrent();
+      loadGallery(artikelInput.value.trim());
+    });
+
+    function updateLive(){
+      titlePreview.textContent = (titleInput.value || '–');
+      descPreview.textContent  = (descInput.value  || '–');
+    }
+
+    function debounce(fn, ms=450){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; }
+    const saveTextDebounced = debounce(saveText, 500);
+
+    async function loadTextForCurrent(){
+      const a = artikelInput.value.trim();
+      if(!a) return;
+      try{
+        const j = await fetchJSON('/api/get_text?artikelnr='+encodeURIComponent(a));
+        titleInput.value = j.title || '';
+        descInput.value  = j.desc  || '';
+        updateLive();
+      }catch{}
+    }
+
+    async function loadLagerortForCurrent(){
+      const a = artikelInput.value.trim();
+      if (!a) return;
+      try {
+        const j = await fetchJSON('/api/get_lagerort?artikelnr=' + encodeURIComponent(a));
+        lagerInput.value = j.lagerort || '';
+      } catch {}
+    }
+
+    async function saveText(){
+      const a = artikelInput.value.trim();
+      if(!a) return;
+      try{
+        await fetchJSON('/api/save_text', {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ artikelnr: a, title: titleInput.value || '', desc: descInput.value || '' })
+        });
+      }catch{}
+    }
+
+    titleInput.addEventListener('input', ()=>{ updateLive(); saveTextDebounced(); });
+    descInput.addEventListener('input',  ()=>{ updateLive(); saveTextDebounced(); });
+
+    function setPreview(rawName, procName) {
+      const rawEl = document.getElementById('preview-raw');
+      const procEl = document.getElementById('preview-proc');
+      rawEl.src = rawName ? ('/raw/' + encodeURIComponent(rawName) + '?t=' + Date.now()) : '';
+      procEl.src = procName ? ('/processed/' + encodeURIComponent(procName) + '?t=' + Date.now()) : '';
+    }
+
+    function setLastCaptured(artikelnr, thumbProcName) {
+      const la = document.getElementById('last-artnr');
+      const lt = document.getElementById('last-thumb');
+      la.textContent = artikelnr || '–';
+      lt.src = thumbProcName ? ('/processed/' + encodeURIComponent(thumbProcName) + '?t=' + Date.now()) : '';
+    }
+
+    async function saveMeta() {
+      const artikelnr = artikelInput.value.trim();
+      const supplier = supplierInput.value.trim();
+      const lagerort = lagerInput.value.trim();
+      await apiFetch('/api/save_meta', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ artikelnr, supplier, lagerort })
+      }).catch(()=>{});
+      await saveText();
+      const btn = document.getElementById('save-meta');
+      btn.classList.add('saved'); setTimeout(() => btn.classList.remove('saved'), 900);
+      showToast('Gespeichert', 'ok', 1200);
+      loadGallery(artikelnr);
+    }
+    document.getElementById('save-meta').addEventListener('click', saveMeta);
+
+    // Datei-Upload
+    document.getElementById('file-input').addEventListener('change', async (e) => {
+      const files = [...e.target.files]; if (files.length === 0) return;
+      const artikelnr = artikelInput.value.trim(); const supplier = supplierInput.value.trim();
+      const fd = new FormData();
+      fd.append('artikelnr', artikelnr); fd.append('supplier', supplier);
+      fd.append('remove_bg', removeBg.checked ? '1' : '0');
+      fd.append('shadow',    addShadow.checked ? '1' : '0');
+      files.forEach(f => fd.append('file', f));
+
+      startProgress('Bilder werden freigestellt …');
+      let j;
+      try {
+        j = await fetchJSON('/api/upload', { method:'POST', body: fd });
+      } catch (err) {
+        finishProgress();
+        showToast(err.message || 'Fehler beim Upload', 'warn', 4000);
+        logItem('Upload-Fehler: ' + (err.message || String(err)), 'warn');
+        return;
+      }
+      finishProgress();
+
+      const last = j.created && j.created.length ? j.created[j.created.length - 1] : null;
+      if (last) { setPreview(last.raw, last.proc); setLastCaptured(j.artikelnr, last.proc); logItem('Bild '+ last.proc +' erfolgreich freigestellt', 'ok'); }
+      if (j.next_artnr && autoinc.checked) artikelInput.value = j.next_artnr;
+      loadGallery(j.artikelnr);
+
+      if (j.suggestion && autoApply.checked){
+        titleInput.value = (j.suggestion.title || '');
+        descInput.value  = (j.suggestion.desc  || '');
+        updateLive();
+        await saveText();
+      }
+      await saveMeta();
+      showToast('Fertig', 'ok', 1000);
+    });
+
+    // Kamera + Serienaufnahme
+    const modal = document.getElementById('camera-modal');
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    let stream = null, serialMode = false;
+
+    document.getElementById('serial-mode').addEventListener('change', e => serialMode = e.target.checked);
+
+    document.getElementById('open-camera').addEventListener('click', async () => {
+      modal.classList.remove('hidden'); modal.classList.add('flex');
+      try {
+        const gum = navigator.mediaDevices?.getUserMedia?.bind(navigator.mediaDevices);
+        if (!gum) throw new Error('getUserMedia nicht verfügbar (HTTPS/Browser).');
+        const constraints = { video: { facingMode: { ideal: 'environment' } }, audio: false };
+        stream = await gum(constraints); video.srcObject = stream;
+      } catch (e) { alert('Kamera nicht verfügbar: ' + (e && e.message ? e.message : e)); }
+    });
+
+    document.getElementById('close-camera').addEventListener('click', () => {
+      modal.classList.add('hidden'); modal.classList.remove('flex');
+      if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+    });
+
+    window.addEventListener('keydown', (e) => {
+      if (serialMode && e.code === 'Space' && !e.repeat) { e.preventDefault(); document.getElementById('snap').click(); }
+    });
+
+    document.getElementById('snap').addEventListener('click', async () => {
+      const artikelnr = artikelInput.value.trim(); const supplier = supplierInput.value.trim();
+      const w = video.videoWidth, h = video.videoHeight; canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d'); ctx.drawImage(video, 0, 0, w, h);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+
+      startProgress('Foto wird freigestellt …');
+      let j;
+      try {
+        j = await fetchJSON('/api/upload_base64', {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({
+            artikelnr, supplier,
+            remove_bg: removeBg.checked ? '1' : '0',
+            shadow:    addShadow.checked ? '1' : '0',
+            data_url:  dataUrl
+          })
+        });
+      } catch (err) {
+        finishProgress();
+        showToast(err.message || 'Fehler beim Upload', 'warn', 4000);
+        logItem('Upload-Fehler: ' + (err.message || String(err)), 'warn');
+        return;
+      }
+      finishProgress();
+
+      const last = j.created && j.created.length ? j.created[j.created.length - 1] : null;
+      if (last) { setPreview(last.raw, last.proc); setLastCaptured(j.artikelnr, last.proc); logItem('Bild '+ last.proc +' erfolgreich freigestellt', 'ok'); }
+      if (j.next_artnr && autoinc.checked) artikelInput.value = j.next_artnr;
+      loadGallery(j.artikelnr);
+
+      if (j.suggestion && autoApply.checked){
+        titleInput.value = (j.suggestion.title || '');
+        descInput.value  = (j.suggestion.desc  || '');
+        updateLive();
+        await saveText();
+      }
+      await saveMeta();
+      showToast('Foto gespeichert', 'ok', 1100);
+      if (!serialMode) { document.getElementById('close-camera').click(); }
+    });
+
+    document.getElementById('refreistellen').addEventListener('click', async () => {
+      startProgress('Neu freistellen …');
+      let j;
+      try {
+        j = await fetchJSON('/api/refreistellen', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ remove_bg: removeBg.checked ? '1' : '0', shadow: addShadow.checked ? '1' : '0' })
+        });
+      } catch (err) {
+        finishProgress();
+        showToast(err.message || 'Fehler beim Neu-Freistellen', 'warn', 4000);
+        logItem('Neu-Freistellen Fehler: ' + (err.message || String(err)), 'warn');
+        return;
+      }
+      finishProgress();
+      setPreview(j.raw, j.proc); setLastCaptured(j.artikelnr, j.proc); loadGallery(j.artikelnr);
+      showToast('Neu freigestellt', 'ok', 1200);
+      logItem('Bild '+ j.proc +' erfolgreich freigestellt', 'ok');
+    });
+
+    document.getElementById('btn-ocr').addEventListener('click', async ()=>{
+      const a = artikelInput.value.trim();
+      let ex = null;
+      try {
+        const r = await apiFetch('/api/images?artikelnr='+encodeURIComponent(a));
+        const j = await r.json(); ex = (j.files||[])[0] || null;
+      } catch {}
+      if (!ex) {
+        try {
+          const rr = await apiFetch('/api/last'); const jj = await rr.json();
+          if (jj && jj.ok && jj.last) ex = jj.last.proc;
+        } catch {}
+      }
+      if (!ex) { showToast('Kein Bild gefunden (bitte zuerst ein Foto).', 'warn', 2400); return; }
+
+      startProgress('Analysiere Bild …');
+      let jj2;
+      try {
+        const rr2 = await apiFetch('/api/ocr_one?filename='+encodeURIComponent(ex));
+        jj2 = await rr2.json();
+        if (!rr2.ok || !jj2.ok) throw new Error(jj2.error||'OCR fehlgeschlagen');
+      } catch (e) {
+        finishProgress(); showToast(e.message || 'OCR fehlgeschlagen', 'warn', 3000); logItem('OCR-Fehler: '+(e.message||String(e)), 'warn'); return;
+      }
+      finishProgress();
+
+      const t = (jj2.title||'').trim();
+      const d = (jj2.desc||'').trim();
+
+      if (autoApply.checked){
+        titleInput.value = t; descInput.value = d; updateLive(); await saveText();
+        showToast('Vorschlag übernommen', 'ok', 1800);
+      }else{
+        showToast('Bezeichnung & Beschreibung (Vorschlag)', 'ok', 5000, `Titel: ${t||'—'}
+Beschreibung: ${d||'—'}`);
+      }
+      logItem('Vorschlag: '+(t||'—'), 'info');
+    });
+
+    async function refreshStats() {
+      try {
+        const r = await apiFetch('/api/stats'); const j = await r.json();
+        document.getElementById('stat-raw').textContent = j.raw_count;
+        document.getElementById('stat-proc').textContent = j.proc_count;
+        document.getElementById('stat-articles').textContent = j.article_count;
+        const rb = document.getElementById('rembg-badge');
+        const lbl = j.rembg.available ? 'Freistellen: aktiv' : 'Freistellen: AUS';
+        if (rb) rb.textContent = lbl;
+        const sr = document.getElementById('stat-rembg'); if (sr) sr.textContent = j.rembg.available ? 'aktiv' : 'aus';
+      } catch (e) {}
+    }
+
+    document.getElementById('btn-refresh-stats')?.addEventListener('click', refreshStats);
+
+    document.getElementById('btn-model-load')?.addEventListener('click', async () => {
+      const r = await apiFetch('/api/rembg_download'); const j = await r.json();
+      if (j.ok) { showToast('Model geladen', 'ok', 1400); }
+      else { showToast('Model nicht verfügbar', 'warn', 3600, j.error||'Unbekannt'); }
+      refreshStats();
+    });
+
+    async function loadGallery(artikelnr) {
+      const galWrap = document.getElementById('gallery');
+      const galLabel = document.getElementById('gal-artnr');
+      galWrap.innerHTML = ''; galLabel.textContent = artikelnr || '–'; if (!artikelnr) return;
+      try {
+        const res = await apiFetch('/api/images?artikelnr=' + encodeURIComponent(artikelnr));
+        const j = await res.json(); const files = j.files || [];
+        if (!files.length) { galWrap.innerHTML = '<div class="text-white/80 col-span-full">Keine Bilder vorhanden.</div>'; return; }
+        for (const fn of files) {
+          const card = document.createElement('div');
+          card.className = 'glass rounded-xl p-2 flex flex-col gap-2';
+          card.innerHTML = `
+            <img src="/processed/${encodeURIComponent(fn)}?t=${Date.now()}" class="w-full aspect-square object-contain rounded-lg bg-white">
+            <div class="text-xs opacity-90 truncate" title="${fn}">${fn}</div>
+            <div class="flex gap-2">
+              <button class="btn btn-primary flex-1" data-act="ref" data-fn="${fn}">Hintergrund entfernen</button>
+              <button class="btn btn-ghost flex-1" data-act="del" data-fn="${fn}">Löschen</button>
+            </div>
+            <button class="btn btn-ghost w-full mt-1" data-act="ren" data-fn="${fn}">Umbenennen (Index)</button>
+          `;
+          galWrap.appendChild(card);
+        }
+        galWrap.querySelectorAll('button[data-act="ref"]').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const fn = btn.getAttribute('data-fn'); btn.disabled = true;
+            startProgress('Freistellen: '+fn);
+            let j;
+            try {
+              j = await fetchJSON('/api/refreistellen_one', {
+                method: 'POST',
+                headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({
+                  filename: fn,
+                  remove_bg: document.getElementById('remove-bg').checked ? '1' : '0',
+                  shadow:    document.getElementById('add-shadow').checked ? '1' : '0'
+                })
+              });
+            } catch (err) {
+              finishProgress();
+              showToast(err.message || 'Freistellen fehlgeschlagen', 'warn', 4000);
+              logItem('Freistellen Fehler: ' + (err.message || String(err)), 'warn');
+              return;
+            }
+            finishProgress();
+            showToast('Neu freigestellt', 'ok', 1200);
+            logItem('Bild '+ j.proc +' erfolgreich freigestellt', 'ok');
+            setPreview(j.raw, j.proc); loadGallery(j.artikelnr);
+            btn.disabled = false;
+          });
+        });
+        galWrap.querySelectorAll('button[data-act="del"]').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const fn = btn.getAttribute('data-fn'); if (!confirm('Bild wirklich löschen?\n'+fn)) return; btn.disabled = true;
+            try {
+              const res = await apiFetch('/api/image', { method: 'DELETE', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ filename: fn })});
+              const j = await res.json(); if (!res.ok || !j.ok) { showToast(j.error || 'Löschen fehlgeschlagen', 'warn', 2600); return; }
+              const trash = j.trash;
+              showToast('Bild gelöscht', 'ok', 3000);
+              logItem('Bild '+ fn +' gelöscht (Papierkorb)', 'info');
+              loadGallery(document.getElementById('artikelnr').value.trim());
+            } finally { btn.disabled = false; }
+          });
+        });
+        galWrap.querySelectorAll('button[data-act="ren"]').forEach(btn=>{
+          btn.addEventListener('click', async ()=>{
+            const old = btn.getAttribute('data-fn'); const a = old.split('_')[0]; const curr = parseInt(old.match(/_(\d+)\.jpg$/)[1],10);
+            const neu = prompt(`Neuen Index für ${old} eingeben:`, curr); if (neu===null) return; const newName = `${a}_${parseInt(neu,10)}.jpg`;
+            if (newName===old) return;
+            const res = await apiFetch('/api/rename',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({old: old, new: newName})});
+            const j = await res.json(); if (!res.ok || !j.ok) { showToast(j.error || 'Umbenennen fehlgeschlagen', 'warn', 2600); return; }
+            showToast('Umbenannt', 'ok', 1000); logItem('Bild '+ old +' → '+ newName, 'info'); loadGallery(a);
+          });
+        });
+      } catch (e) { galWrap.innerHTML = '<div class="text-white/80 col-span-full">Fehler beim Laden.</div>'; }
+    }
+
+    (async () => {
+      try { const s = await apiFetch('/api/health'); const sj = await s.json(); const b = document.getElementById('rembg-badge'); if (b) b.textContent = (sj.rembg && sj.rembg.available) ? 'Freistellen: aktiv' : 'Freistellen: AUS'; } catch {}
+      try { const r = await apiFetch('/api/last'); const j = await r.json(); if (j && j.ok && j.last) { setLastCaptured(j.last.artikelnr, j.last.proc); setPreview(j.last.raw, j.last.proc); if (j.last.artikelnr) artikelInput.value = j.last.artikelnr; } } catch {}
+      await loadTextForCurrent();
+      await loadLagerortForCurrent();
+      refreshStats(); loadGallery(artikelInput.value.trim());
+    })();
+
+    async function pollRebuild() {
+      const box = document.getElementById('rebuild-progress'); if (!box) return; box.classList.remove('hidden');
+      const t = setInterval(async () => {
+        const r = await apiFetch('/api/rebuild_cache_status'); const j = await r.json(); const done=j.done||0, total=j.total||0, err=j.errors||0; const perc = total? Math.floor(done*100/total):0;
+        document.getElementById('rb-done').textContent=done; document.getElementById('rb-total').textContent=total; document.getElementById('rb-perc').textContent=perc; document.getElementById('rb-err').textContent=err; document.getElementById('rb-bar').style.width=perc+'%';
+        if (!j.running) { clearInterval(t); showToast('Rebuild fertig', 'ok', 2000); }
+      }, 500);
+    }
+
+    document.getElementById('btn-batch-ref')?.addEventListener('click', async () => {
+      if (!confirm('Alle optimierten Bilder neu freistellen? Das überschreibt bestehende Optimierungen.')) return;
+      startProgress('Batch startet …');
+      try {
+        const j = await fetchJSON('/api/batch_refreistellen', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            remove_bg: document.getElementById('batch-remove-bg').checked ? '1' : '0',
+            shadow:    document.getElementById('batch-add-shadow').checked ? '1' : '0'
+          })
+        });
+        finishProgress();
+        showToast('Batch fertig: '+j.processed+' Bilder', 'ok', 1800); logItem('Batch freigestellt: '+j.processed, 'info');
+        refreshStats();
+      } catch (err) {
+        finishProgress(); showToast(err.message || 'Batch fehlgeschlagen', 'warn', 3600);
+      }
+    });
+
+    document.getElementById('btn-rebuild')?.addEventListener('click', async () => {
+      if (!confirm('Cache leeren & alle Optimierten neu rendern?')) return;
+      startProgress('Rebuild startet …');
+      try {
+        const j = await fetchJSON('/api/rebuild_cache_start', {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({
+            remove_bg: document.getElementById('batch-remove-bg').checked ? '1' : '0',
+            shadow:    document.getElementById('batch-add-shadow').checked ? '1' : '0'
+          })
+        });
+        finishProgress();
+        if (!j || !j.ok) { showToast('Rebuild fehlgeschlagen', 'warn', 3600); return; }
+        pollRebuild();
+      } catch (err) {
+        finishProgress(); showToast(err.message || 'Rebuild fehlgeschlagen', 'warn', 3600);
+      }
+    });
+  </script>
+</body>
+</html>
