@@ -68,7 +68,9 @@
       <h1 class="text-3xl md:text-4xl font-bold tracking-tight">MyAuktion · Artikelaufnahme</h1>
       <div class="flex items-center gap-3">
         <span id="rembg-badge" class="px-3 py-1 rounded-full text-sm glass">Freistellen: …</span>
-        <button id="export-all" onclick="window.location.href='/api/export_excel'" class="btn btn-ghost"><i data-lucide="table"></i> Gesamtartikel-Export (Excel)</button>
+        <button id="export-all" class="btn btn-ghost">
+          <i data-lucide="table"></i> Gesamtartikel-Export (Excel)
+        </button>
       </div>
     </header>
 
@@ -226,7 +228,7 @@
           <div class="glass rounded-xl p-3">
             <div class="text-sm opacity-80 mb-2">rembg</div>
             <button id="btn-model-load" class="btn btn-primary w-full">Model laden/prüfen</button>
-            <a href="/api/rembg_diag" target="_blank" class="mt-2 block text-center underline">Diagnose öffnen</a>
+            <a id="rembg-diag-link" href="#" target="_blank" class="mt-2 block text-center underline">Diagnose öffnen</a>
           </div>
 
           <div class="glass rounded-xl p-3">
@@ -282,7 +284,9 @@
   </div>
 
   <script>
-    // API-Basis (für Netlify ggf. anpassen, z.B. "https://dein-backend.myauktion.com")
+    // API-Basis:
+    // - Backend gleiche Domain/Origin wie Frontend: API_BASE = '';
+    // - Backend eigene Domain: z.B. 'https://artikelaufnahme.deinedomain.com'
     const API_BASE = '';
 
     function apiFetch(path, options = {}) {
@@ -294,6 +298,11 @@
       if (window.lucide) lucide.createIcons();
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('/sw.js').catch(() => {});
+      }
+      // rembg Diagnose-Link korrekt setzen
+      const diagLink = document.getElementById('rembg-diag-link');
+      if (diagLink) {
+        diagLink.href = (API_BASE || '') + '/api/rembg_diag';
       }
       setTimeout(() => {
         const btn = document.getElementById('open-camera');
@@ -436,15 +445,15 @@
     function setPreview(rawName, procName) {
       const rawEl = document.getElementById('preview-raw');
       const procEl = document.getElementById('preview-proc');
-      rawEl.src = rawName ? ('/raw/' + encodeURIComponent(rawName) + '?t=' + Date.now()) : '';
-      procEl.src = procName ? ('/processed/' + encodeURIComponent(procName) + '?t=' + Date.now()) : '';
+      rawEl.src = rawName ? (API_BASE + '/raw/' + encodeURIComponent(rawName) + '?t=' + Date.now()) : '';
+      procEl.src = procName ? (API_BASE + '/processed/' + encodeURIComponent(procName) + '?t=' + Date.now()) : '';
     }
 
     function setLastCaptured(artikelnr, thumbProcName) {
       const la = document.getElementById('last-artnr');
       const lt = document.getElementById('last-thumb');
       la.textContent = artikelnr || '–';
-      lt.src = thumbProcName ? ('/processed/' + encodeURIComponent(thumbProcName) + '?t=' + Date.now()) : '';
+      lt.src = thumbProcName ? (API_BASE + '/processed/' + encodeURIComponent(thumbProcName) + '?t=' + Date.now()) : '';
     }
 
     async function saveMeta() {
@@ -463,6 +472,11 @@
       loadGallery(artikelnr);
     }
     document.getElementById('save-meta').addEventListener('click', saveMeta);
+
+    // Export-Button: immer Backend-URL verwenden
+    document.getElementById('export-all').addEventListener('click', () => {
+      window.location.href = (API_BASE || '') + '/api/export_excel';
+    });
 
     // Datei-Upload
     document.getElementById('file-input').addEventListener('change', async (e) => {
@@ -665,7 +679,7 @@ Beschreibung: ${d||'—'}`);
           const card = document.createElement('div');
           card.className = 'glass rounded-xl p-2 flex flex-col gap-2';
           card.innerHTML = `
-            <img src="/processed/${encodeURIComponent(fn)}?t=${Date.now()}" class="w-full aspect-square object-contain rounded-lg bg-white">
+            <img src="${API_BASE}/processed/${encodeURIComponent(fn)}?t=${Date.now()}" class="w-full aspect-square object-contain rounded-lg bg-white">
             <div class="text-xs opacity-90 truncate" title="${fn}">${fn}</div>
             <div class="flex gap-2">
               <button class="btn btn-primary flex-1" data-act="ref" data-fn="${fn}">Hintergrund entfernen</button>
@@ -752,7 +766,7 @@ Beschreibung: ${d||'—'}`);
       try {
         const j = await fetchJSON('/api/batch_refreistellen', {
           method: 'POST',
-          headers: {'Content-Type': 'application/json'},
+          headers:{'Content-Type': 'application/json'},
           body: JSON.stringify({
             remove_bg: document.getElementById('batch-remove-bg').checked ? '1' : '0',
             shadow:    document.getElementById('batch-add-shadow').checked ? '1' : '0'
@@ -772,7 +786,7 @@ Beschreibung: ${d||'—'}`);
       try {
         const j = await fetchJSON('/api/rebuild_cache_start', {
           method:'POST',
-          headers:{'Content-Type':'application/json'},
+          headers:{'Content-Type': 'application/json'},
           body: JSON.stringify({
             remove_bg: document.getElementById('batch-remove-bg').checked ? '1' : '0',
             shadow:    document.getElementById('batch-add-shadow').checked ? '1' : '0'
